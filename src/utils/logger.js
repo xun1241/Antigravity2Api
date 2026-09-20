@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { redactForLog, redactString } = require("./redact");
 
 // ANSI 颜色代码
 const Colors = {
@@ -223,6 +224,7 @@ function createLogger(options = {}) {
   
   const minLevel = options.minLevel || "debug";
   const minPriority = (LogLevels[minLevel] || LogLevels.debug).priority;
+  const logBodies = !!(options.logBodies ?? options.debug ?? false);
 
   // 请求计数器和统计
   const stats = {
@@ -283,11 +285,14 @@ function createLogger(options = {}) {
     const coloredLevel = `${levelConfig.color}${levelConfig.label.padEnd(8)}${Colors.reset}`;
     const timeStr = `${Colors.gray}[${timestamp}]${Colors.reset}`;
     
-    let consoleOutput = `${timeStr} ${icon} ${coloredLevel} ${message}`;
+    const safeMessage = redactString(message, { maxStringLength: 1500 });
+    const safeMeta = meta !== null && meta !== undefined ? redactForLog(meta) : meta;
+
+    let consoleOutput = `${timeStr} ${icon} ${coloredLevel} ${safeMessage}`;
     
     // 如果有元数据，格式化输出
-    if (meta !== null && meta !== undefined) {
-      const metaStr = formatLogContent(meta);
+    if (safeMeta !== null && safeMeta !== undefined) {
+      const metaStr = formatLogContent(safeMeta);
       if (metaStr) {
         // 多行数据使用缩进显示
         if (metaStr.includes("\n")) {
@@ -303,8 +308,8 @@ function createLogger(options = {}) {
     
     // 文件日志（纯文本，无颜色）
     const separator = "-".repeat(60);
-    const metaContent = meta !== null && meta !== undefined ? formatLogContent(meta) : "";
-    const fileEntry = `[${fullTimestamp}] [${levelConfig.label}] ${message}\n${metaContent ? metaContent + "\n" : ""}${separator}\n`;
+    const metaContent = safeMeta !== null && safeMeta !== undefined ? formatLogContent(safeMeta) : "";
+    const fileEntry = `[${fullTimestamp}] [${levelConfig.label}] ${safeMessage}\n${metaContent ? metaContent + "\n" : ""}${separator}\n`;
     
     fs.appendFile(logFile, fileEntry, (err) => {
       if (err) console.error("Failed to write to log file:", err);
@@ -322,13 +327,10 @@ function createLogger(options = {}) {
     log("request", `${Colors.bold}${method}${Colors.reset} ${url}${reqIdStr}`);
     
     if (headers && Object.keys(headers).length > 0) {
-      const safeHeaders = { ...headers };
-      if (safeHeaders.Authorization) safeHeaders.Authorization = "[REDACTED]";
-      if (safeHeaders["x-api-key"]) safeHeaders["x-api-key"] = "[REDACTED]";
-      log("debug", "请求头", safeHeaders);
+      log("debug", "请求头", headers);
     }
     
-    if (body) {
+    if (body && logBodies) {
       log("debug", "请求体", body);
     }
     
@@ -355,7 +357,7 @@ function createLogger(options = {}) {
       log("debug", "响应头", headers);
     }
     
-    if (body) {
+    if (body && logBodies) {
       log("debug", "响应体", body);
     }
     

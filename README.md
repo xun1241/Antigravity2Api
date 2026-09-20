@@ -77,6 +77,7 @@ npm install
 AG2API_HOST=0.0.0.0
 AG2API_PORT=3000
 AG2API_API_KEYS=sk-your-secret-key-1,sk-your-secret-key-2
+AG2API_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 AG2API_PROXY_ENABLED=false
 AG2API_PROXY_URL=
 AG2API_DEBUG=false
@@ -89,7 +90,8 @@ AG2API_UPDATE_REPO=znlsl/Antigravity2Api
 
 - `AG2API_HOST`：监听地址
 - `AG2API_PORT`：监听端口
-- `AG2API_API_KEYS`：API Key（逗号分隔或 JSON 数组字符串；为空表示不校验）
+- `AG2API_API_KEYS`：API Key（逗号分隔或 JSON 数组字符串；用于 API 与管理接口鉴权。未配置时管理接口 `/admin/api/*` 默认不可用）
+- `AG2API_CORS_ORIGINS`：CORS 允许来源（逗号分隔，默认 `http://localhost:3000,http://127.0.0.1:3000`；设为空表示不允许跨域）
 - `AG2API_PROXY_ENABLED`：是否启用代理（true/false）
 - `AG2API_PROXY_URL`：代理地址
 - `AG2API_DEBUG`：是否开启 debug（true/false）

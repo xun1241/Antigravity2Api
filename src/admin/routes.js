@@ -4,20 +4,47 @@ const accounts = require("./accounts");
 const oauth = require("./oauth");
 
 function isApiKeyValid(apiKey, config) {
-  if (!config?.api_keys || config.api_keys.length === 0) return true;
-  if (!apiKey) return false;
-  return config.api_keys.includes(apiKey);
+  const keys = Array.isArray(config?.api_keys) ? config.api_keys.filter(Boolean) : [];
+  if (keys.length === 0) {
+    return {
+      ok: false,
+      status: 503,
+      message: "Admin API auth is not configured. Set AG2API_API_KEYS to enable admin endpoints.",
+    };
+  }
+  if (!apiKey || !keys.includes(apiKey)) {
+    return {
+      ok: false,
+      status: 401,
+      message: "Invalid API Key",
+    };
+  }
+  return { ok: true };
+}
+
+function logWarn(logger, message, meta) {
+  if (!logger) return;
+  if (typeof logger.log === "function") {
+    logger.log("warn", message, meta);
+    return;
+  }
+  if (typeof logger === "function") {
+    logger("warn", message, meta);
+  }
 }
 
 async function handleAdminRoute(req, parsedUrl, { authManager, upstreamClient, config, logger } = {}) {
   if (!parsedUrl.pathname.startsWith("/admin/api/")) return null;
 
   const apiKey = extractApiKey(req.headers);
-  if (!isApiKeyValid(apiKey, config)) {
-    if (logger) {
-      logger("warn", `⛔ Admin API unauthorized access from ${req.socket.remoteAddress}`);
-    }
-    return jsonResponse(401, { error: { message: "Invalid API Key" } });
+  const auth = isApiKeyValid(apiKey, config);
+  if (!auth.ok) {
+    logWarn(logger, "⛔ Admin API unauthorized access", {
+      ip: req.socket.remoteAddress,
+      path: parsedUrl.pathname,
+      status: auth.status,
+    });
+    return jsonResponse(auth.status, { error: { message: auth.message } });
   }
 
   try {

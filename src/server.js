@@ -7,6 +7,7 @@ const path = require("path");
 const { getConfig } = require("./utils/config");
 const { createLogger, Colors, Box } = require("./utils/logger");
 const { extractApiKey, parseJsonBody } = require("./utils/http");
+const { getCorsHeaders } = require("./utils/cors");
 
 const { AuthManager, OAuthFlow } = require("./auth");
 const { ClaudeApi, GeminiApi, UpstreamClient } = require("./api");
@@ -14,7 +15,10 @@ const { handleAdminRoute, handleOAuthCallbackRoute } = require("./admin/routes")
 const { handleUiRoute } = require("./ui/routes");
 
 const config = getConfig();
-const logger = createLogger({ logRetentionDays: config.log?.retention_days });
+const logger = createLogger({
+  logRetentionDays: config.log?.retention_days,
+  logBodies: !!config.debug,
+});
 const debugRequestResponse = !!config.debug;
 
 // 兼容旧的日志 API
@@ -37,14 +41,16 @@ const geminiApi = new GeminiApi({ authManager, upstreamClient, logger, debug: de
 
 const isAddFlow = process.argv.includes("--add");
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key, anthropic-api-key, x-goog-api-key, anthropic-version",
-};
+function buildCorsHeaders(req, preflight = false) {
+  return getCorsHeaders({
+    origin: req.headers.origin,
+    corsOrigins: config.cors?.origins,
+    preflight,
+  });
+}
 
-async function writeResponse(res, apiResponse) {
-  const headers = { ...CORS_HEADERS, ...(apiResponse.headers || {}) };
+async function writeResponse(req, res, apiResponse) {
+  const headers = { ...(apiResponse.headers || {}), ...buildCorsHeaders(req, false) };
   res.writeHead(apiResponse.status || 200, headers);
 
   const body = apiResponse.body;
@@ -94,7 +100,13 @@ const server = http.createServer(async (req, res) => {
 
   // CORS preflight
   if (req.method === "OPTIONS") {
-    res.writeHead(200, CORS_HEADERS);
+    const corsHeaders = buildCorsHeaders(req, true);
+    if (req.headers.origin && !corsHeaders["Access-Control-Allow-Origin"]) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "CORS origin is not allowed" } }));
+      return;
+    }
+    res.writeHead(204, corsHeaders);
     res.end();
     return;
   }
@@ -118,7 +130,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, uiResponse);
+      return await writeResponse(req, res, uiResponse);
     }
 
     // OAuth callback (public, state-protected)
@@ -128,7 +140,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, oauthCallbackResp);
+      return await writeResponse(req, res, oauthCallbackResp);
     }
 
     // Admin API (API key protected inside handler)
@@ -138,7 +150,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, adminResp);
+      return await writeResponse(req, res, adminResp);
     }
 
     // API Key Auth for upstream-compatible API endpoints
@@ -154,7 +166,7 @@ const server = http.createServer(async (req, res) => {
             path: pathname,
             requestId,
           });
-          res.writeHead(401, { ...CORS_HEADERS, "Content-Type": "application/json" });
+          res.writeHead(401, { ...buildCorsHeaders(req, false), "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: { message: "Invalid API Key" } }));
           return;
         }
@@ -168,7 +180,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     // Gemini models list
@@ -178,7 +190,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     // Gemini model detail
@@ -190,7 +202,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     // Gemini generate/streamGenerate
@@ -210,7 +222,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     // Gemini countTokens (new, optional)
@@ -223,7 +235,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     // Claude count tokens
@@ -235,7 +247,7 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     // Claude messages
@@ -252,21 +264,21 @@ const server = http.createServer(async (req, res) => {
         requestId,
         duration: Date.now() - startTime,
       });
-      return await writeResponse(res, result);
+      return await writeResponse(req, res, result);
     }
 
     logger.log("warn", `❓ 未找到路由`, { method: req.method, path: req.url, requestId });
-    res.writeHead(404, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.writeHead(404, { ...buildCorsHeaders(req, false), "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: { message: `Not Found: ${req.method} ${req.url}` } }));
   } catch (err) {
     if (err && err.message === "INVALID_JSON") {
       logger.log("warn", `📝 无效的 JSON 请求体`, { requestId });
-      res.writeHead(400, { ...CORS_HEADERS, "Content-Type": "application/json" });
+      res.writeHead(400, { ...buildCorsHeaders(req, false), "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: { message: "Invalid JSON body" } }));
       return;
     }
     logger.logError("请求处理失败", err, { requestId });
-    res.writeHead(500, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.writeHead(500, { ...buildCorsHeaders(req, false), "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: { message: "Internal Server Error" } }));
   }
 });
