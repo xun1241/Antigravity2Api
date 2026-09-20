@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 
 const httpClient = require("../auth/httpClient");
+const { escapeHtml } = require("../utils/html");
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const sessions = new Map();
@@ -11,15 +12,6 @@ function nowMs() {
 
 function hasUrlScheme(value) {
   return /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
-}
-
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function resolveServerPort(config) {

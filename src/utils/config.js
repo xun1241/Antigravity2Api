@@ -1,10 +1,12 @@
 const fs = require("fs");
 const path = require("path");
+const { DEFAULT_CORS_ORIGINS, parseCorsOrigins } = require("./cors");
 
 const DEFAULT_CONFIG = {
   server: { host: "0.0.0.0", port: 3000 },
   api_keys: [],
   proxy: { enabled: false, url: "" },
+  cors: { origins: DEFAULT_CORS_ORIGINS },
   log: { retention_days: 3 },
   // Debug switch: only affects request/response payload logs.
   debug: false,
@@ -119,12 +121,14 @@ function normalizeConfig(raw) {
   const serverRaw = raw && typeof raw.server === "object" ? raw.server : {};
   const proxyRaw = raw && typeof raw.proxy === "object" ? raw.proxy : {};
   const logRaw = raw && typeof raw.log === "object" ? raw.log : {};
+  const corsRaw = raw && typeof raw.cors === "object" ? raw.cors : {};
 
   return {
     ...DEFAULT_CONFIG,
     ...(raw && typeof raw === "object" ? raw : {}),
     server: { ...DEFAULT_CONFIG.server, ...serverRaw },
     proxy: { ...DEFAULT_CONFIG.proxy, ...proxyRaw },
+    cors: { ...DEFAULT_CONFIG.cors, ...corsRaw },
     log: { ...DEFAULT_CONFIG.log, ...logRaw },
     api_keys: Array.isArray(raw?.api_keys) ? raw.api_keys : DEFAULT_CONFIG.api_keys,
     debug: normalizeDebug(raw?.debug),
@@ -136,6 +140,7 @@ function applyEnvOverrides(config) {
     ...config,
     server: { ...config.server },
     proxy: { ...config.proxy },
+    cors: { ...config.cors },
     log: { ...config.log },
   };
 
@@ -162,6 +167,13 @@ function applyEnvOverrides(config) {
 
   if (process.env.AG2API_PROXY_URL && String(process.env.AG2API_PROXY_URL).trim()) {
     out.proxy.url = String(process.env.AG2API_PROXY_URL).trim();
+  }
+
+  if (process.env.AG2API_CORS_ORIGINS != null) {
+    const origins = parseCorsOrigins(process.env.AG2API_CORS_ORIGINS);
+    if (origins != null) {
+      out.cors.origins = origins;
+    }
   }
 
   const debug = parseBool(process.env.AG2API_DEBUG);

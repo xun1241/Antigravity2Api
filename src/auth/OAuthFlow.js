@@ -3,6 +3,7 @@ const { exec } = require("child_process");
 const readline = require("readline");
 
 const httpClient = require("./httpClient");
+const { escapeHtml } = require("../utils/html");
 
 function getRandom5Port(min = 50000, max = 59999) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -53,6 +54,7 @@ class OAuthFlow {
 
               if (error) {
                 const errorDesc = url.searchParams.get("error_description") || error;
+                const safeErrorDesc = escapeHtml(errorDesc);
                 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -73,7 +75,7 @@ class OAuthFlow {
         <div class="icon">❌</div>
         <h1>Login Failed</h1>
         <p>We encountered an error while trying to log you in.</p>
-        <div class="error-details">${errorDesc}</div>
+        <div class="error-details">${safeErrorDesc}</div>
     </div>
 </body>
 </html>`;
@@ -123,6 +125,7 @@ class OAuthFlow {
                   res.end(html);
                   return;
                 } catch (tokenError) {
+                  const safeTokenErrorMessage = escapeHtml(tokenError?.message || tokenError || "Unknown error");
                   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -143,7 +146,7 @@ class OAuthFlow {
         <div class="icon">❌</div>
         <h1>Authentication Error</h1>
         <p>Failed to retrieve access token.</p>
-        <div class="error-details">${tokenError.message}</div>
+        <div class="error-details">${safeTokenErrorMessage}</div>
     </div>
 </body>
 </html>`;
